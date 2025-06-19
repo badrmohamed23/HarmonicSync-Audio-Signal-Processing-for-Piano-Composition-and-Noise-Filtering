@@ -1,0 +1,115 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import sounddevice as sd
+from scipy.fftpack import fft, ifft
+
+fs = 44100
+duration = 3
+t = np.linspace(0, 3, 3 * 44100)
+
+octave3 = {'C': 130.81, 'D': 146.83, 'E': 164.81, 'F': 174.61, 'G': 196.00, 'A': 220.00, 'B': 246.94}
+octave4 = {'C': 261.63, 'D': 293.66, 'E': 329.63, 'F': 349.23, 'G': 392.00, 'A': 440.00, 'B': 493.88}
+
+note_pairs = [('C', 'C'), ('E', 'E'),('G', 'G'), ('A', 'A')]
+start_times = [0, 0.5, 1.0, 1.5]
+durations = [0.5, 0.5, 0.5, 0.5]
+
+x = np.zeros_like(t)
+
+for i in range(len(note_pairs)):
+    Fi = octave3[note_pairs[i][0]]
+    fi = octave4[note_pairs[i][1]]
+    ti = start_times[i]
+    Ti = durations[i]
+    window = np.where(np.logical_and(t >= ti, t < ti+Ti), 1, 0)
+    signal = window*(np.sin(2 * np.pi * Fi * t) + np.sin(2 * np.pi * fi * t)) 
+    x += signal
+
+sd.play(x, 3 * 44100)
+sd.wait()
+
+fn1, fn2 = np.random.randint(0, 512, 2)
+print(f"Noise frequencies: {fn1} Hz and {fn2} Hz")
+x_noisy = x + (np.sin(2 * np.pi * fn1 * t) + np.sin(2 * np.pi * fn2 * t)) * 0.5
+sd.play(x_noisy, 3 * 44100)
+sd.wait()
+
+N = 3 * 44100
+f = np.linspace(0, 44100/2, int(N / 2))
+
+
+x_f = fft(x)
+x_f_mag = 2/N * np.abs(x_f[0:int(N/2)])
+
+x_noisy_f = fft(x_noisy)
+x_noisy_f_mag = 2/N * np.abs(x_noisy_f[0:int(N/2)])
+
+
+
+target_freqs = [octave3[n] for n, _ in note_pairs] + [octave4[n] for _, n in note_pairs]
+
+x_n_fft = fft(x_noisy)
+mag = 2 / N * np.abs(x_n_fft[:int(N / 2)])
+threshold = 0.90 * np.max(mag)
+noise_indices = np.where(mag > threshold)[0]
+
+x_filtered_fft = x_n_fft.copy()
+for idx in noise_indices:
+    freq = f[idx]
+    is_musical_note = any(abs(freq - tf) < 3 for tf in target_freqs)
+    if not is_musical_note:
+        x_filtered_fft[idx] = 0
+        x_filtered_fft[-idx] = 0
+
+x_filtered = np.real(ifft(x_filtered_fft))
+
+x_filtered_fft= fft(x_filtered)
+x_filtered_fft_mag = 2/N * np.abs(x_filtered_fft[0:int(N/2)])
+
+sd.play(x_filtered, 3 * 44100)
+sd.wait()
+
+plt.figure()
+plt.plot(t, x)
+plt.title('Time domain original signal')
+plt.xlabel('Time (s)')
+plt.ylabel('Amplitude')
+plt.show()
+
+plt.figure()
+plt.plot(t, x_noisy)
+plt.title('Time domain noisy signal')
+plt.xlabel('Time (s)')
+plt.ylabel('Amplitude')
+plt.show()
+
+plt.figure()
+plt.plot(f, x_f_mag)
+plt.title('Frequency domain original signal')
+plt.xlabel('Frequency (Hz)')
+plt.ylabel('Amplitude')
+plt.xlim(0, 512)
+plt.show()
+
+plt.figure()
+plt.plot(f, x_noisy_f_mag)
+plt.title('Frequency domain noisy signal')
+plt.xlabel('Frequency (Hz)')
+plt.ylabel('Amplitude')
+plt.xlim(0, 512)
+plt.show()
+
+plt.figure()
+plt.plot(t, x_filtered)
+plt.title('Time domain filtered signal')
+plt.xlabel('Time (s)')
+plt.ylabel('Amplitude')
+plt.show()
+
+plt.figure()
+plt.plot(f, x_filtered_fft_mag)
+plt.title('Frequency domain filtered signal')
+plt.xlabel('Frequency (Hz)')
+plt.ylabel('Amplitude')
+plt.xlim(0, 512)
+plt.show()
